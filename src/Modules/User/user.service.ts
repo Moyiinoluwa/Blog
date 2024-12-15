@@ -6,8 +6,12 @@ import { IUserOtp, UserOtp } from "../../Model/user/userOtp.model";
 import { mailer } from "../../Mailer/mailer.service";
 import { v4 as uuidv4 } from 'uuid';
 import Jwt from 'jsonwebtoken';
+import { getConfig } from "../../Config/config";
+import httpStatus from 'http-status';
+import ApiError from "../../Utils/apiError";
 
 
+const { SECRET_KEY } = getConfig();
 
 
 export class UserService {
@@ -19,10 +23,9 @@ export class UserService {
 
             //check if user has registered before
             const userRegistered = await User.findOne({ email: email })
-            if (userRegistered) {
-                res.status(400).json({ error: 'user already exists' })
-            }
-
+            if (userRegistered)
+                throw new ApiError(httpStatus.BAD_REQUEST, 'user already exists')
+                
             //hash password
             const hash = await bcrypt.hash(password, 10)
 
@@ -70,30 +73,29 @@ export class UserService {
             const { email, code } = req.body;
             //check if email is regsitered
             const userEmail = await UserOtp.findOne({ email: email })
-            if (!userEmail) {
-                res.status(404).json({ error: 'user is not registered' })
-            }
+            if (!userEmail)
+                throw new ApiError(httpStatus.NOT_FOUND, 'user is not registered') 
 
             //check if the code is correct
             const userCode = await UserOtp.findOne({ otp: code }) as unknown as IUserOtp
-            if (!userCode) {
-                res.status(404).json({ error: 'code is not correct' })
-            }
-
+            if (!userCode) 
+                throw new ApiError(httpStatus.BAD_REQUEST, 'code is not correct')
+                 
             //check if the code has expired
-            if (userCode.expirationTime <= new Date()) {
-                res.status(401).json({ error: 'code has expired' })
-            }
+            if (userCode.expirationTime <= new Date()) 
+                throw new ApiError(httpStatus.BAD_REQUEST,'code has expired' ) 
 
             //find the user associated with the email
-            const user = await User.findOne({ email: email })
-            if (!user) {
-                res.status(404).json({ error: 'user is not associated to the email the code was sent to' })
-            }
+            const user = await User.findOne({ email: email }) as unknown as IUser
+            if (!user)
+                throw new ApiError(httpStatus.NOT_FOUND, 'user is not associated to the email the code was sent to')
 
             //update database
             userCode.verified = true
+            user.isVerified = true
+
             await userCode.save();
+            await user.save()
 
             return { message: 'code is verified' }
 
@@ -110,10 +112,9 @@ export class UserService {
 
             //check if user is registered
             const user = await User.findOne({ email: email }) as unknown as IUser
-            if (!user) {
-                res.status(404).json({ error: 'user cannot request for another code ' })
-            }
-
+            if (!user) 
+                throw new ApiError(httpStatus.BAD_REQUEST, 'user cannot request for another code ')
+                 
             //set verification code
             const userCode = generate2FACode6digits();
 
@@ -148,9 +149,8 @@ export class UserService {
 
             //check if user is registered
             const user = await User.findOne({ email: email }) as unknown as IUser
-            if (!user) {
-                res.status(404).json({ error: 'user cannot request password link' })
-            }
+            if (!user)
+                throw new ApiError(httpStatus.NOT_FOUND, 'user cannot request password link')
 
             //set the link token
             const linkToken = uuidv4();
@@ -187,18 +187,18 @@ export class UserService {
 
             //check if user is registered
             const user = await User.findOne({ email: email }) as unknown as IUser
-            if (!user) {
-                res.status(404).json({ error: 'user cannot reset password' })
-            }
+            if (!user) 
+                throw new ApiError(httpStatus.NOT_FOUND, 'user cannot reset password, please register')
 
             //check if link is valid
-            if (user.resetLink !== resetLink) {
-                res.status(401).json({ error: 'invalid reset link' })
-            }
-
+            if (user.resetLink !== resetLink) 
+                throw new ApiError(httpStatus.NOT_FOUND, 'invalid reset link')
+             
             //hash password
             const hash = await bcrypt.hash(password, 10)
 
+            //reset password
+            user.password = hash;
 
             //save to database
             await user.save()
@@ -220,15 +220,13 @@ export class UserService {
 
             //find user by id
             const user = await User.findById(_id) as unknown as IUser
-            if (!user) {
-                res.status(404).json({ message: 'user cannot change password' })
-            }
+            if (!user) 
+                throw new ApiError(httpStatus.FORBIDDEN, 'user cannot change password, please log in')
 
             //compare the old password saved with the one user entered
             const passwordMatch = await bcrypt.compare(oldPassword, newPassword)
-            if (passwordMatch) {
-                res.status(400).json({ message: 'old password is incorrect' })
-            }
+            if (passwordMatch)
+                throw new ApiError(httpStatus.NOT_FOUND, 'old password is incorrect')
 
             //hash new password
             const hash = await bcrypt.hash(newPassword, 10)
@@ -256,9 +254,8 @@ export class UserService {
 
             //check if user is registered
             const user = await User.findById(_id) as unknown as IUser
-            if (!user) {
-                res.status(404).json({ message: 'user cannot update profile' })
-            }
+            if (!user) 
+                throw new ApiError(httpStatus.FORBIDDEN, 'user cannot update profile' )
 
             //update profile
             user.email = email;
@@ -282,9 +279,8 @@ export class UserService {
 
             //find all registered users
             const users = await User.find()
-            if (users.length == 0) {
-                res.status(404).json({ error: 'There are no registered users' })
-            }
+            if (users.length == 0)
+                throw new ApiError(httpStatus.NOT_FOUND,'There are no registered users' )
 
             return { all: users }
             // return res.status(200).json({ users })
@@ -300,60 +296,70 @@ export class UserService {
         try {
             const { email, password } = req.body;
 
-            //check if user is registered
-            const user = await User.findOne({ email: email }) as unknown as IUser
-            if (!user) {
-                res.status(404).json({ error: 'user cannot login' })
+            // Check if the user is registered
+            const user = await User.findOne({ email: email }) as unknown as IUser;
+            if (!user) 
+                throw new ApiError(httpStatus.NOT_FOUND, 'User cannot login, please log in')
+
+            // Check if the account is verified
+            if (!user.isVerified) 
+                throw new ApiError(httpStatus.BAD_REQUEST, 'Account is not verified' )
+
+            // Check if the account is locked
+            if (user.isLocked)
+                throw new ApiError(httpStatus.BAD_REQUEST,'Account is locked' )
+
+            // Compare the password
+            const validPassword = await bcrypt.compare(password, user.password);
+
+            // If the password is incorrect
+            if (!validPassword) {
+                user.loginCount += 1;
+
+                // Check if the user has exceeded login attempts
+                if (user.loginCount >= 5) {
+                    user.isLocked = true;
+                    user.lockedUntil = new Date(Date.now() + 2 * 60 * 60 * 1000); //lock for two hours
+                    await user.save();
+                    throw new ApiError(httpStatus.BAD_REQUEST, 'Account is locked due to multiple failed login attempts.' )
+                }
+
+                // Save the updated login count
+                await user.save();
+
+                // Send number of attempt left to the user
+                throw new ApiError(httpStatus.BAD_REQUEST,`Incorrect password, You have ${5 - user.loginCount} attempts left,
+                     your account will be locked for two hours` )
+
+                // return res.status(401).json({
+                //     error: `Incorrect password, You have ${5 - user.loginCount} attempts left,
+                //      your account will be locked for two hours` });
             }
 
-            //if account is verified
-            if (!user.isVerified) {
-                return res.status(403).json({ error: 'Account is not verified' });
-            }
-
-            //if account is locked
-            if (user.isLocked) {
-                return res.status(403).json({ error: 'Account is locked' });
-            }
-
-            //compare the password and grant access 
-            const validPassword = await bcrypt.compare(password, user.password)
-
-            //if the password is correct,  reset login attempt and unlock account
+            // If the password is correct, reset login attempts and unlock account
             user.loginCount = 0;
             user.isLocked = false;
             await user.save();
 
-            //if user enters a wrong password
-            if (!validPassword) {
-                user.loginCount += 1
-                await user.save()
-                res.status(401).json({ error: `Incorrect password, You have ${5 - user.loginCount} attempts left` })
-            }
-
-            // Check if the user has exceeded login attempts
-            if (user.loginCount >= 5) {
-                user.isLocked = true;
-                await user.save();
-                return res.status(403).json({ error: 'Account is locked due to multiple failed login attempts.' });
-            }
-
             // Generate and return access token
+           // const secret = process.env.SECRET_KEY || ''
             const accessToken = Jwt.sign(
                 {
-                    userId: user._id, 
-                    email: user.email, 
-                    role:  user.role
+                    userId: user._id,
+                    email: user.email,
+                    role: user.role,
                 },
-                process.env.SECRET_KEY,
-                { expiresIn: '1d' }
+                //'9876543210',
+                SECRET_KEY,
+                //process.env.SECRET_KEY  
+                { expiresIn: '1y' }
             );
             return res.status(200).json({ accessToken });
-
         } catch (error) {
-            throw error
+            throw error;
         }
     }
+
 }
 
 

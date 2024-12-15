@@ -2,6 +2,8 @@ import { Request, NextFunction } from "express";
 import { adminValidator } from "./Validator/admin.validator";
 import { adminService } from "./admin.service";
 import { userService } from "../User/user.service";
+import ApiError from "../../Utils/apiError";
+import httpStatus from "http-status";
 
 
 export class AdminController {
@@ -9,7 +11,8 @@ export class AdminController {
     public async registerAdmin(req: Request, res: any, next: NextFunction) {
         try {
             const { error } = adminValidator.validateRegister(req.body);
-            if (error) {
+            if (error)
+             {
                 res.status(400).json({ error: error.details[0].message })
             }
 
@@ -184,6 +187,21 @@ export class AdminController {
         }
     }
 
+    //LOGIN
+    public async login(req: Request, res: any, next: NextFunction) {
+        try {
+            const { error } = adminValidator.validateLogin(req.body);
+            if(error) {
+                res.status(401).json({ error: error.details[0].message})
+            }
+
+            //userlogin sends the response to the user 
+            await adminService.adminLogin(req, res);
+
+        } catch (error) {
+            next(error)
+        }
+    }
 
 }
 

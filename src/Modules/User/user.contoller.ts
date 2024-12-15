@@ -2,6 +2,8 @@ import { NextFunction } from "express";
 import { userValidator } from "./Validator/user.validator";
 import { Request } from "express";
 import { userService } from "./user.service";
+import ApiError from "../../Utils/apiError";
+import httpStatus from "http-status";
 
 
 
@@ -122,7 +124,8 @@ class UserController {
         try {
 
             const { error } = userValidator.validateUpdate(req.body);
-            if (error) {
+            if (error) 
+                {
                 res.status(400).json({ error: error.details[0].message })
             }
 
@@ -130,6 +133,21 @@ class UserController {
             if (message) {
                 res.status(200).json({ message })
             }
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    //LOGIN
+    public async login(req: Request, res: any, next: NextFunction) {
+        try {
+            const { error } = userValidator.validateLogin(req.body);
+            if(error)
+                throw new ApiError(httpStatus.NOT_FOUND, error.details[0].message)
+
+            //userlogin sends the response to the user 
+            await userService.userLogin(req, res);
+
         } catch (error) {
             next(error)
         }

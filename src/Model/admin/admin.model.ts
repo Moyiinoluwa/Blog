@@ -15,6 +15,7 @@ export interface IAdmin {
     isResetLinkSent: Boolean;
     isVerified: Boolean;
     isLocked: Boolean;
+    lockedUntil: Date;
     loginCount: Number;
     role: Role
 }
@@ -74,6 +75,10 @@ const AdminSchema = new Schema<IAdmin>({
     isLocked: {
         type: Boolean,
         default: false
+    },
+
+    lockedUntil: {
+        type: Date
     },
 
     loginCount: {

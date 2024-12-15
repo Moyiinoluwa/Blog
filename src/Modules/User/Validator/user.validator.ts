@@ -77,7 +77,7 @@ export class UserValidator {
 
     public validateChangePassword = (user: IUser): ValidationResult => {
         const schema: ObjectSchema = Joi.object({
-            oldPassword: Joi.string() 
+            oldPassword: Joi.string()
                 .min(8)
                 .max(16)
                 .required()
@@ -121,6 +121,29 @@ export class UserValidator {
                 'string.email': `email format must be valid`
             }),
         });
+
+        return schema.validate(user)
+    }
+
+    public validateLogin = (user: IUser): ValidationResult => {
+        const schema: ObjectSchema = Joi.object({
+            email: Joi.string().required().messages({
+                'string.empty': `email cannot be empty`,
+                'string.email': `email format must be valid`
+            }),
+            password: Joi.string()
+                .min(8)
+                .max(16)
+                .required()
+                .messages({
+                    'string.base': `Password should be a type of 'text'`,
+                    'string.min': `Password must have at least 7 characters`,
+                    'string.max': `Password must have at most 100 characters`,
+                    'string.empty': `Password cannot be an empty field`,
+                    'any.required': `Password is a required field`,
+                    'string.pattern.base': `Password must contain an uppercase letter, a lowercase letter, and a number`
+                }),
+        })
 
         return schema.validate(user)
     }

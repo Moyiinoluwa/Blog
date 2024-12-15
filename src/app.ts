@@ -3,19 +3,19 @@ import { connection } from './Config/dbConnection';
 import router from './Modules/User/user.routes';
 import adminRouter from './Modules/Admin/admin.routes';
 import blogRouter from './Modules/Blog/blog.route';
+import dotenv from 'dotenv'
 
 
 const app: Express = express()
-
-app.get('/', (req: Request, res: Response) => {
-   res.send('joy is coming')
-})
 
 //middleware 
 app.use(express.json()) 
 
 //database connection
 connection();
+
+//configure dotenv
+dotenv.config()
 
 //routes
 app.use('/api/user', router)

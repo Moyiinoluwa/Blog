@@ -6,7 +6,13 @@ import { generate2FACode6digits } from "../../Utils/verificationCode";
 import { mailer } from "../../Mailer/mailer.service";
 import { v4 as uuidv4 } from 'uuid'
 import { IUser, User } from "../../Model/user/user.model";
+import Jwt from 'jsonwebtoken';
+import { getConfig } from "../../Config/config";
+import httpStatus from "http-status";
+import ApiError from "../../Utils/apiError";
 
+
+const { SECRET_KEY } = getConfig();
 
 export class AdminService {
     //REGISTER
@@ -16,9 +22,8 @@ export class AdminService {
 
             //check if user has registered before
             const userRegistered = await Admin.findOne({ email: email })
-            if (userRegistered) {
-                res.status(400).json({ error: 'user already exists' })
-            }
+            if (userRegistered)
+                throw new ApiError(httpStatus.FORBIDDEN, 'admin already exists')
 
             //hash password
             const hash = await bcrypt.hash(password, 10)
@@ -54,7 +59,7 @@ export class AdminService {
             //send verification code to user via mail
             await mailer.verificationMail(email, code, firstName)
 
-            return { message: 'user registered' }
+            return { message: 'admin registered' }
 
         } catch (error) {
             throw error
@@ -68,32 +73,28 @@ export class AdminService {
             const { email, code } = req.body;
             //check if email is regsitered
             const userEmail = await AdminOtp.findOne({ email: email })
-            if (!userEmail) {
-                res.status(404).json({ error: 'user is not registered' })
-            }
+            if (!userEmail)
+                throw new ApiError(httpStatus.NOT_FOUND, 'admin is not registered')
 
             //check if the code is correct
             const userCode = await AdminOtp.findOne({ otp: code }) as unknown as IAdminOtp
-            if (!userCode) {
-                res.status(404).json({ error: 'code is not correct' })
-            }
+            if (!userCode)
+                throw new ApiError(httpStatus.BAD_GATEWAY, 'code is not correct')
 
             //check if the code has expired
-            if (userCode.expirationTime <= new Date()) {
-                res.status(401).json({ error: 'code has expired' })
-            }
+            if (userCode.expirationTime <= new Date())
+                throw new ApiError(httpStatus.FORBIDDEN, 'code has expired')
 
             //find the user associated with the email
             const user = await Admin.findOne({ email: email }) as unknown as IAdmin
-            if (!user) {
-                res.status(404).json({ error: 'user is not associated to the email the code was sent to' })
-            }
+            if (!user)
+                throw new ApiError(httpStatus.NOT_FOUND, 'user is not associated to the email the code was sent to')
 
             //update database
             userCode.verified = true
             user.isVerified = true
             await userCode.save();
-            
+            await user.save()
 
             return { message: 'code is verified' }
 
@@ -110,9 +111,8 @@ export class AdminService {
 
             //check if user is registered
             const user = await Admin.findOne({ email: email }) as unknown as IAdmin
-            if (!user) {
-                res.status(404).json({ error: 'user cannot request for another code ' })
-            }
+            if (!user)
+                throw new ApiError(httpStatus.BAD_REQUEST, 'admin cannot request for another code ')
 
             //set verification code
             const userCode = generate2FACode6digits();
@@ -142,16 +142,15 @@ export class AdminService {
     }
 
 
-     //RESET PASSWORD LINK
-     public async resetPasswordLink(req: Request, res: Response) {
+    //RESET PASSWORD LINK
+    public async resetPasswordLink(req: Request, res: Response) {
         try {
             const { email } = req.body;
 
             //check if user is registered
             const user = await Admin.findOne({ email: email }) as unknown as IAdmin
-            if (!user) {
-                res.status(404).json({ error: 'user cannot request password link' })
-            }
+            if (!user)
+                throw new ApiError(httpStatus.NOT_FOUND, 'admin cannot request password link')
 
             //set the link token
             const linkToken = uuidv4();
@@ -164,7 +163,7 @@ export class AdminService {
             linkTime.setMinutes(linkTime.getMinutes() + 10);
 
             //send to user via mail
-            await  mailer.resetLinkMail(email, resetLink, user.firstName)
+            await mailer.resetLinkMail(email, resetLink, user.firstName)
 
             //update database
             user.resetLink = resetLink;
@@ -172,7 +171,7 @@ export class AdminService {
             user.resetLink_expirationTime = linkTime;
 
             await user.save()
-            
+
             return { message: 'reset link sent' }
 
         } catch (error) {
@@ -188,23 +187,22 @@ export class AdminService {
 
             //check if user is registered
             const user = await Admin.findOne({ email: email }) as unknown as IAdmin
-            if (!user) {
-                res.status(404).json({ error: 'user cannot reset password' })
-            }
+            if (!user)
+                throw new ApiError(httpStatus.NOT_FOUND, 'admin cannot reset password')
 
             //check if link is valid
-            if (user.resetLink !== resetLink) {
-                res.status(401).json({ error: 'invalid reset link' })
-            }
+            if (user.resetLink !== resetLink)
+                throw new ApiError(httpStatus.FORBIDDEN, 'invalid reset link')
 
             //hash password
             const hash = await bcrypt.hash(password, 10)
 
+            user.password = hash;
 
             //save to database
             await user.save()
 
-            return { message: 'user password reset' }
+            return { message: 'admin password reset' }
 
         } catch (error) {
             throw error
@@ -215,21 +213,19 @@ export class AdminService {
     public async changePassword(req: Request, res: Response) {
         try {
 
-            const { _id }  = req.params;
+            const { _id } = req.params;
 
             const { oldPassword, newPassword } = req.body;
 
             //find user by id
             const user = await Admin.findById(_id) as unknown as IAdmin
-            if (!user) {
-                res.status(404).json({ message: 'user cannot change password' })
-            }
+            if (!user)
+                throw new ApiError(httpStatus.NOT_FOUND, 'user cannot change password')
 
             //compare the old password saved with the one user entered
             const passwordMatch = await bcrypt.compare(oldPassword, newPassword)
-            if(passwordMatch) {
-                res.status(400).json({  message: 'old password is incorrect'})
-            }
+            if (!passwordMatch)
+                throw new ApiError(httpStatus.BAD_REQUEST, 'old password is incorrect')
 
             //hash new password
             const hash = await bcrypt.hash(newPassword, 10)
@@ -251,15 +247,14 @@ export class AdminService {
     //UPDATE USER
     public async updateUser(req: Request, res: Response) {
         try {
-            const  {_id}  = req.params;
+            const { _id } = req.params;
 
             const { email, firstName, lastName } = req.body;
 
             //check if user is registered
-            const user = await Admin.findById(_id)  as unknown as IAdmin
-            if(!user) {
-                res.status(404).json({ message: 'user cannot update profile'})
-            }
+            const user = await Admin.findById(_id) as unknown as IAdmin
+            if (!user)
+                throw new ApiError(httpStatus.BAD_REQUEST, 'user cannot update profile')
 
             //update profile
             user.email = email;
@@ -269,45 +264,43 @@ export class AdminService {
             //save to database
             await user.save()
 
-            return { message: 'profile updated'}
+            return { message: 'profile updated' }
 
         } catch (error) {
             throw error
         }
     }
 
-     //DELETE PROFILE
-     public async deleteAdmin(req: Request, res: Response) {
+    //DELETE PROFILE
+    public async deleteAdmin(req: Request, res: Response) {
         try {
-                const { _id } = req.params;
+            const { _id } = req.params;
 
             const user = await Admin.findById(_id) as unknown as IAdmin
-            if(!user) {
-                res.status(404).json({ error: 'user cannot delete'})
-            }
+            if (!user)
+                throw new ApiError(httpStatus.BAD_REQUEST, 'user cannot delete')
 
             //delete
             await user.deleteOne()
 
-            return { message: 'user deleted'}
+            return { message: 'user deleted' }
 
         } catch (error) {
             throw error
         }
     }
 
-     //GET ALL USERS
-     public async getAll(req: Request, res: Response) {
+    //GET ALL USERS
+    public async getAll(req: Request, res: Response) {
         try {
 
             //find all registered users
             const users = await User.find()
-            if(users.length == 0) {
-                res.status(404).json({ error: 'There are no registered users'})
-            }
+            if (users.length == 0)
+                throw new ApiError(httpStatus.NOT_FOUND, 'There are no registered users')
 
-            return { all: users}
-         // return res.status(200).json({ users })
+            return { all: users }
+            // return res.status(200).json({ users })
 
         } catch (error) {
             throw error
@@ -321,9 +314,9 @@ export class AdminService {
             //find user by id
             const { _id } = req.params;
 
-           const user = await User.findById(_id)
-            if(!user) {
-                res.status(404).json({ error: 'cannot get this user'})
+            const user = await User.findById(_id)
+            if (!user) {
+                throw new ApiError(httpStatus.NOT_FOUND, 'cannot get this user')
             } else {
                 return { user }
             }
@@ -334,20 +327,19 @@ export class AdminService {
     }
 
 
-     //DELETE PROFILE
-     public async deleteUser(req: Request, res: Response) {
+    //DELETE PROFILE
+    public async deleteUser(req: Request, res: Response) {
         try {
-                const { _id } = req.params;
+            const { _id } = req.params;
 
             const user = await User.findById(_id) as unknown as IUser
-            if(!user) {
-                res.status(404).json({ error: 'user cannot delete'})
-            }
+            if (!user)
+                throw new ApiError(httpStatus.BAD_REQUEST, 'user cannot delete')
 
             //delete
             await user.deleteOne()
 
-            return { message: 'user deleted'}
+            return { message: 'user deleted' }
 
         } catch (error) {
             throw error
@@ -355,7 +347,73 @@ export class AdminService {
     }
 
 
-    
+    //USER LOGIN
+    public async adminLogin(req: Request, res: Response) {
+        try {
+            const { email, password } = req.body;
+
+            // Check if the user is registered
+            const admin = await Admin.findOne({ email: email }) as unknown as IUser;
+            if (!admin)
+                throw new ApiError(httpStatus.NOT_FOUND, 'admin cannot login, please register')
+
+            // Check if the account is verified
+            // if (!admin.isVerified) {
+            //     return res.status(403).json({ error: 'Account is not verified' });
+            // }
+
+            // Check if the account is locked
+            if (admin.isLocked)
+                throw new ApiError(httpStatus.BAD_REQUEST, 'Account is locked')
+
+            // Compare the password
+            const validPassword = await bcrypt.compare(password, admin.password);
+
+            // If the password is incorrect
+            if (!validPassword) {
+                admin.loginCount += 1;
+
+                // Check if the user has exceeded login attempts
+                if (admin.loginCount >= 5) {
+                    admin.isLocked = true;
+                    admin.lockedUntil = new Date(Date.now() + 2 * 60 * 60 * 1000); //lock for two hours
+                    await admin.save();
+                    throw new ApiError(httpStatus.FORBIDDEN, 'Account is locked due to multiple failed login attempts.')
+                }
+
+                // Save the updated login count
+                await admin.save();
+
+                // Send number of attempt left to the user
+                throw new ApiError(httpStatus.FORBIDDEN, `Incorrect password, You have ${5 - admin.loginCount} attempts left,
+                 your account will be locked for two hours`)
+            }
+
+            // If the password is correct, reset login attempts and unlock account
+            admin.loginCount = 0;
+            admin.isLocked = false;
+            await admin.save();
+
+            // const secretKey = process.env.SECRET_KEY || ''
+            // console.log(secretKey)
+            // Generate and return access token
+            const accessToken = Jwt.sign(
+                {
+                    userId: admin._id,
+                    email: admin.email,
+                    role: admin.role,
+                },
+                SECRET_KEY,
+                //'9876543210',
+                { expiresIn: '1d' }
+            );
+            return res.status(200).json({ accessToken });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+
 }
 
 

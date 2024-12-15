@@ -1,4 +1,4 @@
-import { model, Schema } from "mongoose";
+import mongoose, { model, Schema } from "mongoose";
 import { Role } from "../../Modules/Enum/enum.role";
 
 export interface IUser {
@@ -6,6 +6,7 @@ export interface IUser {
     deleteOne(): unknown; 
    // deleteOne(arg0: { id: string; }): unknown;
    // save(): unknown;
+   _id: String
     firstName: string;
     lastName: string;
     email: string;
@@ -17,8 +18,10 @@ export interface IUser {
     isResetLinkSent: Boolean;
     isVerified: Boolean;
     isLocked: Boolean;
-    loginCount: Number;
-    role: Role
+    lockedUntil: Date;
+    loginCount: number;
+    role: Role,
+   // blog: String
 }
 
 
@@ -79,6 +82,10 @@ const UserSchema = new Schema<IUser>({
         default: false
     },
 
+    lockedUntil: {
+        type: Date
+    },
+
     loginCount: {
         type: Number,
         default: 0
@@ -89,7 +96,13 @@ const UserSchema = new Schema<IUser>({
         enum: Object.values(Role), 
         default: Role.USER,        
         required: true,
-    }
+    },
+
+    // blog: {
+    //     type: mongoose.Schema.Types.ObjectId,
+    //     ref: 'Blog',
+    //     required: true
+    // }
 });
 
 
